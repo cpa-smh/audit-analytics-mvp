@@ -65,7 +65,7 @@ class OverallTests(unittest.TestCase):
         current=bs((D("6686206000000"),D("15825890000000")),
                    (D("2490240000000"),D("12900311000000")))
         out=overall(2025,prior,current,NOTE_2025+"\n"+BONDS,NOTE_2024,
-                    D("817154000000"),D("564246000000"))
+                    D("817154000000"),D("564246000000"),tolerance_pct=D("0.01"))
         self.assertIsNotNone(out["expected_net_proxy"])
         self.assertIsNotNone(out["difference_proxy"])
         self.assertEqual(out["cap_current"],D("155955000000"))
