@@ -1,4 +1,4 @@
-"""Interest and depreciation analytical procedures MVP (Python 3.10+)."""
+"""Interest expense analytical procedures MVP (Python 3.10+)."""
 import argparse,json,os,re
 from datetime import date
 from decimal import Decimal
@@ -10,9 +10,8 @@ from dart import Dart,DartError,expense,excerpts,number
 from ai import ask,citation,input_value,calculate
 from overall import overall,formatted_rows
 
-ACCOUNTS=('이자비용','감가상각비')
-PROCEDURES={'이자비용':'차입금 명세·은행조회서·계약서 대사, 일별 잔액×약정금리 재계산, 미지급이자 기간귀속 및 자본화 검토',
- '감가상각비':'유형자산 명세와 취득·처분 증빙 대사, 준공·검수 및 사용가능일 확인, 내용연수·잔존가치·상각방법과 월별 상각 재계산'}
+ACCOUNTS=('이자비용',)
+PROCEDURES={'이자비용':'차입금 명세·은행조회서·계약서 대사, 일별 잔액×약정금리 재계산, 미지급이자 기간귀속 및 자본화 검토'}
 def change(current,previous,pct,amount):
     if current is None or previous is None:return None,None,False,'자료 없음'
     delta=current-previous;rate=delta/abs(previous) if previous else None
@@ -50,7 +49,7 @@ def collect(args):
         for a in ACCOUNTS:
             for quote in excerpts(text,a,args.max_excerpts):source(a,f'사업보고서 ({y}.12) {args.basis} 감사보고서',receipt,receipt[:8],quote,y,args.basis)
     triggered=[a for a in ACCOUNTS if any(values[a][y]['amount'] is None for y in (args.year-1,args.year)) or change(values[a][args.year]['amount'],values[a][args.year-1]['amount'],args.pct,args.amount)[2]]
-    tokens={'이자비용':r'차입|사채|금전대차|증권신고서|증권발행실적보고서|상환|차환','감가상각비':r'신규시설|시설투자|유형자산|공장|생산중단|생산재개'}
+    tokens={'이자비용':r'차입|사채|금전대차|증권신고서|증권발행실적보고서|상환|차환'}
     related=[f for f in filings if f['rcept_dt'][:4]==str(args.year) and any(re.search(tokens[a],f['report_nm']) for a in triggered)]
     related.sort(key=lambda f:f['rcept_no'],reverse=True)
     if len(related)>args.max_filings:warnings.append(f'관련공시 {len(related)}건 중 최근 {args.max_filings}건만 탐색')
@@ -86,11 +85,11 @@ def analyze(args,values,sources,answer,ai_status):
                     values[account][y].update(amount=candidates[0][0],source=candidates[0][1],method='AI 주석 추출(인용·숫자 검증)')
             if ai.expectation:
                 try:
-                    if ai.expectation.kind!=('interest' if account=='이자비용' else 'depreciation'):raise ValueError('기대값 계정 불일치')
+                    if ai.expectation.kind!='interest':raise ValueError('이자비용 기대값 계정 불일치')
                     expected=calculate(ai.expectation,index,args.year)
                     comparison='연간 전체 비용' if ai.expectation.coverage=='full_annual' else '개별 건 증분 기대값; 전체 비용과 직접 대사 불가'
                 except (ValueError,ArithmeticError):issues.append('기대값 입력 근거 부족/오류: 계산 유보')
-            if ai.rates and account=='이자비용':
+            if ai.rates:
                 try:
                     old=Decimal(input_value(ai.rates.old_percent,index));new=Decimal(input_value(ai.rates.new_percent,index))
                     if not (0<=old<=100 and 0<=new<=100):raise ValueError()
@@ -140,21 +139,25 @@ def export(path,company,year,reports,sources,warnings,overall_report=None):
         for col in s.columns:s.column_dimensions[col[0].column_letter].width=28
         for n in range(4,s.max_row+1):s.row_dimensions[n].height=110
         if name=='분석적절차 결과':
-            for n in range(4,6):
+            for n in range(4,s.max_row+1):
                 for col in (2,3,4,8,9):s.cell(n,col).number_format='#,##0;(#,##0)'
                 s.cell(n,5).number_format='0.0%'
         elif name=='관련 공시 근거':s.column_dimensions['F'].width=100
     path=Path(path);path.parent.mkdir(parents=True,exist_ok=True);w.save(path)
 
 def demo(year,basis):
-    values={a:{year-1:{'amount':Decimal(v),'source':'D1','method':'DEMO'},year:{'amount':Decimal(v)*Decimal('1.3'),'source':'D1','method':'DEMO'}} for a,v in [('이자비용',10000000000),('감가상각비',20000000000)]}
-    sources=[{'id':'D1','account':a,'title':'가상 테스트 공시(실제 공시 아님)','receipt':'DEMO','date':str(year)+'0101','url':'','quote':'합성 데이터: 전년 대비 30% 증가. 실제 기업 분석이 아님.','year':year,'basis':basis} for a in ACCOUNTS]
-    sources[1]['id']='D2'
-    for y in (year-1,year):values['감가상각비'][y]['source']='D2'
+    values={'이자비용':{
+        year-1:{'amount':Decimal('10000000000'),'source':'D1','method':'DEMO'},
+        year:{'amount':Decimal('13000000000'),'source':'D1','method':'DEMO'}}}
+    sources=[{'id':'D1','account':'이자비용','title':'가상 테스트 공시(실제 공시 아님)',
+        'receipt':'DEMO','date':str(year)+'0101','url':'',
+        'quote':'합성 데이터: 전년 대비 30% 증가. 실제 기업 분석이 아님.',
+        'year':year,'basis':basis}]
     return '가상기업',values,sources,['DEMO: 모든 수치·공시는 가상 데이터; 외부 API 미호출']
+
 def main():
     load_dotenv(Path(__file__).with_name('.env'))
-    p=argparse.ArgumentParser(description='이자·감가상각비 감사 분석적절차 MVP')
+    p=argparse.ArgumentParser(description='이자비용 Overall Test 및 분석적절차 MVP')
     p.add_argument('--company',required=True);p.add_argument('--year',type=int,required=True);p.add_argument('--output',default='분석결과.xlsx');p.add_argument('--basis',choices=['CFS','OFS'],default='CFS');p.add_argument('--pct',type=Decimal,default=Decimal('.20'));p.add_argument('--amount',type=Decimal,default=Decimal('1000000000'));p.add_argument('--rate-pp',type=Decimal,default=Decimal('1'));p.add_argument('--overall-tolerance',type=Decimal,default=Decimal('0.05'));p.add_argument('--cache',default='.cache');p.add_argument('--max-filings',type=int,default=8);p.add_argument('--max-excerpts',type=int,default=4);p.add_argument('--no-ai',action='store_true');p.add_argument('--demo',action='store_true');args=p.parse_args()
     if not 2016<=args.year<date.today().year or any(not x.is_finite() or x<0 for x in (args.pct,args.amount,args.rate_pp,args.overall_tolerance)) or args.max_filings<1 or args.max_excerpts<1:p.error('완료된 사업연도(2016년 이후), 유한한 비음수 기준 및 양수 탐색 건수를 지정하세요.')
     try:company,values,sources,warnings,rows_by_year,note_texts,receipts=(demo(args.year,args.basis)+({},{},{}) if args.demo else collect(args))
