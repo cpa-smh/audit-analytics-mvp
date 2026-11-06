@@ -66,7 +66,7 @@ class Dart:
             if not names: raise DartError('해당 연결/별도 감사보고서 첨부 없음; 혼용 방지를 위해 주석 생략')
             return '\n'.join(plain(z.read(n)) for n in names)
 
-KEYWORDS={'이자비용':('이자비용','차입','사채','금리','상환','차환'), '감가상각비':('감가상각','유형자산','내용연수','건설중','준공','가동','생산설비','신규시설')}
+KEYWORDS={'이자비용':('이자비용','차입','사채','금리','상환','차환')}
 def excerpts(text,account,limit=8):
     """Merge adjacent windows, retain source table headers, bound one-call input."""
     windows=[]
@@ -84,8 +84,9 @@ def number(value):
     return Decimal('-'+s[1:-1] if s.startswith('(') else s)
 
 def expense(rows,account):
-    """No paid-interest or combined depreciation/amortisation substitutions."""
-    names={'이자비용':{'이자비용','금융원가중이자비용'},'감가상각비':{'감가상각비'}}[account]
+    """Use recognized interest expense, not paid interest or total finance costs."""
+    names={'이자비용','금융원가중이자비용'}
+    if account!='이자비용':raise ValueError('이자비용 계정만 지원합니다.')
     candidates=[r for r in rows if re.sub(r'\s+','',r.get('account_nm','')) in names and r.get('sj_div') in ('IS','CIS','CF') and r.get('currency')=='KRW' and r.get('account_detail','-') in ('-','')]
     for sj in ('IS','CIS','CF'):
         selected=[r for r in candidates if r['sj_div']==sj]
