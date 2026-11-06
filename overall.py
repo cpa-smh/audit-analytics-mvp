@@ -203,16 +203,16 @@ def overall(year, rows_prior, rows_current, notes_current, notes_prior,
         issues.append("전기 사업보고서와 당기 비교표시 이자비용 차이: 재작성 여부 대사")
     avg_prior=(previous_year_debt+prior_debt)/2 if previous_year_debt is not None and prior_debt is not None else None
     avg_current=(prior_debt+current_debt)/2 if prior_debt is not None and current_debt is not None else None
-    prior_gross=actual_prior+cap_prior if actual_prior is not None and cap_prior is not None else None
-    current_gross=actual_current+cap_current if actual_current is not None and cap_current is not None else None
+    prior_gross=actual_prior+cap_prior if actual_prior is not None and cap_prior is not None else actual_prior
+    current_gross=actual_current+cap_current if actual_current is not None and cap_current is not None else actual_current
     historical_rate=prior_gross/avg_prior if prior_gross is not None and avg_prior and avg_prior>0 else None
     current_rate=current_gross/avg_current if current_gross is not None and avg_current and avg_current>0 else None
     expected_gross=historical_rate*avg_current if historical_rate is not None and avg_current is not None else None
-    expected_net=expected_gross-cap_current if expected_gross is not None and cap_current is not None else None
+    expected_net=(expected_gross-cap_current if cap_current is not None else expected_gross) if expected_gross is not None else None
     diff=actual_current-expected_net if actual_current is not None and expected_net is not None else None
     threshold=max(D(tolerance_abs),abs(actual_current)*D(tolerance_pct)) if actual_current is not None else None
     flagged=abs(diff)>=threshold if diff is not None and threshold is not None else None
-    if cap_current is None: issues.append("당기 자본화 차입원가 정보 미확인: 전체 기대값 계산 유보")
+    if cap_current is None or cap_prior is None: issues.append("차입원가 자본화 자료 부족: 비용화 이자부담률만 사용한 근사 검토(자본화 조정 생략); 실제 전체 이자 재계산 아님")
     if historical_rate is None: issues.append("전기 평균부채 또는 자본화 전 이자자료 부족")
     issues.append("잔액은 기초·기말 단순평균: 차입·상환 시점, 환율, 변동금리, 리스 효과 검증 필요")
     if flagged: issues.append("기준 초과 차이: 차입원장·원리금상환표·계약서로 상세 재계산 필요")
@@ -239,8 +239,8 @@ def overall(year, rows_prior, rows_current, notes_current, notes_prior,
             "bond_coverage":{"existing":old_count,"new":new_count,"post":post_count,
                              "coupon_proxy":len(bond_checks),"missing":missing},
             "bonds":bonds,"bond_checks":bond_checks,"issues":issues,
-            "method":"전기 자본화 전 이자비용/전기 평균 이자발생부채 × 당기 평균 이자발생부채 − 당기 자본화 금액",
-            "confidence":"공시 기반 근사 Overall Test; 전체 계약별 독립 검증 미완료",
+            "method":("전기 자본화 전 이자비용/전기 평균 이자발생부채 × 당기 평균 이자발생부채 − 당기 자본화 금액" if cap_current is not None and cap_prior is not None else "전기 비용화 이자비용/전기 평균 이자발생부채 × 당기 평균 이자발생부채 (자본화 자료 미확인, 비교지표)"),
+            "confidence":"공시 기반 근사 Overall Test; 전체 계약별 독립 검증 미완료; 허용차이 초과는 검토 신호이지 왜곡표시 결론이 아님",
             "procedures":[
               "차입금·사채·리스부채 모집단을 총계정원장, 차입금명세, 은행조회서와 대사",
               "계약별 원금·차입/상환일·금리 재설정일·일별잔액으로 독립적 이자 재계산",
