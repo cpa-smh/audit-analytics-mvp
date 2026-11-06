@@ -122,8 +122,11 @@ def write_excel(destination, result, info, events, explanation):
         ('당기 실제 장부상 이자비용(원)',result.actual_interest),
         ('차이 = 실제−기대(원)',result.variance),
         ('차이율 = |차이|÷|기대|',result.variance_ratio),
-        ('수용가능 차이 비교기준(원)',result.tolerable_difference),
-        ('10% AND 10억원 기준 동시 충족',result.needs_disclosure_search),
+        ('실제−기대 절대차이 기준(원, 초과)',result.tolerable_difference),
+        ('전기대비 실제 이자비용 변동(원)',result.yoy_change),
+        ('전기대비 절대변동률',result.yoy_change_ratio),
+        ('전기대비 절대변동 기준(원, 이상)',result.yoy_difference_threshold),
+        ('금액 차이 OR 전기대비 변동 기준 충족',result.needs_disclosure_search),
         ('판정',result.conclusion),('계산식',result.method),
         ('전기 이자 출처',info['prior_method']),('당기 이자 출처',info['current_method']),
         ('전기 사업보고서',f"https://dart.fss.or.kr/dsaf001/main.do?rcpNo={info['prior_receipt']}" if info['prior_receipt'] else '미확인'),
@@ -153,7 +156,7 @@ def write_excel(destination, result, info, events, explanation):
         if ws is s:
             for ix in range(2,ws.max_row+1):
                 ws.row_dimensions[ix].height=24 if ix not in (26,27) else 88
-                if ws.cell(ix,1).value=='차이율 = |차이|÷|기대|':ws.cell(ix,2).number_format='0.0%'
+                if ws.cell(ix,1).value in ('차이율 = |차이|÷|기대|', '전기대비 절대변동률'):ws.cell(ix,2).number_format='0.0%'
                 elif isinstance(ws.cell(ix,2).value,(int,float)) and ix>3:
                     ws.cell(ix,2).number_format='#,##0.0000;(#,##0.0000)'
         else:
@@ -167,12 +170,12 @@ def write_excel(destination, result, info, events, explanation):
 
 def main():
     load_dotenv(Path(__file__).with_name('.env'))
-    p=argparse.ArgumentParser(description='이자비용 Overall Test: 기대값 계산 후 10%·10억 차이 시에만 공시 검색')
+    p=argparse.ArgumentParser(description='이자비용 Overall Test: 실제−기대 절대차이 10억원 초과 OR 전기대비 실제 이자비용 절대변동 10% 이상 시 공시 검색')
     p.add_argument('--company',required=True,help='예: LG에너지솔루션, 대한항공, 종목코드')
     p.add_argument('--year',required=True,type=int,help='예: 2025')
     p.add_argument('--basis',choices=['CFS','OFS'],default='CFS')
-    p.add_argument('--amount',type=Decimal,default=Decimal('1000000000'),help='공시검색 차이 금액 기준(원)')
-    p.add_argument('--pct',type=Decimal,default=Decimal('0.10'),help='공시검색 차이율 기준: 기본 10%%')
+    p.add_argument('--amount',type=Decimal,default=Decimal('1000000000'),help='실제−기대 절대차이 금액 기준(원, 초과)')
+    p.add_argument('--pct',type=Decimal,default=Decimal('0.10'),help='전기 실제 이자비용 대비 절대변동 기준(이상): 기본 10%%')
     p.add_argument('--max-filings',type=int,default=10)
     p.add_argument('--cache',default='.cache')
     p.add_argument('--output',default='이자비용_Overall_Test.xlsx')

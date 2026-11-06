@@ -20,15 +20,15 @@ class OverallTestCases(unittest.TestCase):
         self.assertEqual(r.tolerable_difference,D('1000000000'))
         self.assertTrue(r.needs_disclosure_search)
 
-    def test_no_search_if_only_amount_threshold_satisfied(self):
+    def test_search_if_only_amount_threshold_satisfied(self):
         r=overall_test(200_000_000_000,200_000_000_000,200_000_000_000,
                        100_000_000_000,102_000_000_000)
-        self.assertFalse(r.needs_disclosure_search)
+        self.assertTrue(r.needs_disclosure_search)
 
-    def test_no_search_if_only_percent_threshold_satisfied(self):
+    def test_search_if_only_percent_threshold_satisfied(self):
         r=overall_test(2_000_000_000,2_000_000_000,2_000_000_000,
                        100_000_000,200_000_000)
-        self.assertFalse(r.needs_disclosure_search)
+        self.assertTrue(r.needs_disclosure_search)
 
     def test_capitalization_properly_adjusted(self):
         r=overall_test(200,200,300,10,20,2,3,min_variance_won=D('0.1'))
@@ -40,9 +40,45 @@ class OverallTestCases(unittest.TestCase):
     def test_undefined_or_missing_data_never_invents_rate(self):
         r=overall_test(None,200,300,10,20)
         self.assertIsNone(r.expected_interest)
-        self.assertFalse(r.needs_disclosure_search)
+        self.assertTrue(r.needs_disclosure_search)
         r=overall_test(10,10,10,0,1_500_000_000)
         self.assertIsNone(r.variance_ratio)
+        self.assertTrue(r.needs_disclosure_search)
+
+    def test_independent_boundaries_and_decreases(self):
+        for delta, search in ((999_999_999,False),(1_000_000_000,False),
+                              (1_000_000_001,True),(-1_000_000_000,False),
+                              (-1_000_000_001,True)):
+            with self.subTest(delta=delta):
+                r=overall_test(200_000_000_000,200_000_000_000,200_000_000_000,
+                               100_000_000_000,100_000_000_000+delta)
+                self.assertEqual(r.needs_disclosure_search,search)
+        for actual, search in ((109_999_999,False),(110_000_000,True),
+                               (90_000_001,False),(90_000_000,True)):
+            with self.subTest(actual=actual):
+                r=overall_test(100,100,100,100_000_000,actual)
+                self.assertEqual(r.needs_disclosure_search,search)
+
+    def test_yoy_uses_prior_actual_not_expected_or_capitalized(self):
+        r=overall_test(100,100,120,100_000_000,110_000_000)
+        self.assertEqual(r.variance,0)
+        self.assertEqual(r.yoy_change_ratio,D('0.10'))
+        self.assertTrue(r.needs_disclosure_search)
+        r=overall_test(100,100,200,100_000_000,105_000_000)
+        self.assertGreater(r.variance_ratio,D('0.10'))
+        self.assertFalse(r.needs_disclosure_search)
+        r=overall_test(100,100,100,100_000_000,110_000_000,100_000_000,100_000_000)
+        self.assertEqual(r.yoy_difference_threshold,D('10000000'))
+        self.assertTrue(r.needs_disclosure_search)
+
+    def test_zero_and_missing_inputs(self):
+        for prior, actual, search in ((0,0,True),(0,1,True),
+                                      (None,1,False),(1,None,False)):
+            with self.subTest(prior=prior,actual=actual):
+                r=overall_test(100,100,100,prior,actual)
+                self.assertEqual(r.needs_disclosure_search,search)
+        r=overall_test(100,100,100,100_000_000,110_000_000,
+                       min_variance_ratio=D('0.11'))
         self.assertFalse(r.needs_disclosure_search)
 
     def test_interest_only_keywords(self):
@@ -99,6 +135,22 @@ class GatingCases(unittest.TestCase):
         self.assertEqual(d.event_calls,0)
         self.assertEqual(d.event_excerpt_calls,0)
         self.assertEqual(events,[])
+    def test_each_or_arm_reaches_event_search(self):
+        from unittest.mock import patch
+        for prior,actual in ((100_000_000_000,102_000_000_000),
+                             (100_000_000,110_000_000),
+                             (100_000_000,90_000_000)):
+            with self.subTest(prior=prior,actual=actual):
+                d=StubDart(actual)
+                values=(200_000_000_000,200_000_000_000,200_000_000_000,
+                        prior,actual,None,None)
+                with patch('main.collect_historical',return_value=(values,{'code':'12345678'})):
+                    result,_,events,_=analyze_company(d,'가상상장사',2025,'CFS',D('1000000000'),D('0.10'))
+                self.assertTrue(result.needs_disclosure_search)
+                self.assertEqual(d.event_calls,1)
+                self.assertEqual(d.event_excerpt_calls,1)
+                self.assertEqual(len(events),1)
+
     def test_event_search_happens_only_after_gate(self):
         d=StubDart(12_000_000_000)
         result,meta,events,explanation=analyze_company(d,'가상상장사',2025,'CFS',D('1000000000'),D('0.10'))
@@ -112,5 +164,9 @@ class GatingCases(unittest.TestCase):
             wb=load_workbook(path,read_only=True)
             self.assertEqual(wb.sheetnames,['Overall Test','관련 공시 검토'])
             self.assertEqual(wb['관련 공시 검토']['A4'].value,'증권발행실적보고서')
+            rows=dict(wb['Overall Test'].iter_rows(min_row=2,values_only=True))
+            self.assertEqual(rows['전기대비 절대변동률'],0.2)
+            self.assertEqual(rows['금액 차이 OR 전기대비 변동 기준 충족'],'예')
+            wb.close()
 
 if __name__=='__main__':unittest.main()

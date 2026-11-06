@@ -35,6 +35,9 @@ class Result:
     variance: Optional[Decimal]
     variance_ratio: Optional[Decimal]
     tolerable_difference: Optional[Decimal]
+    yoy_change: Optional[Decimal]
+    yoy_change_ratio: Optional[Decimal]
+    yoy_difference_threshold: Optional[Decimal]
     needs_disclosure_search: bool
     conclusion: str
     method: str
@@ -47,8 +50,9 @@ def overall_test(prior_begin_debt, prior_end_debt, current_end_debt,
                  min_variance_ratio=D('0.10')) -> Result:
     """Use prior observed interest burden to independently estimate current expense.
 
-    Disclosure gate is AND: absolute difference >= KRW amount AND relative
-    difference >= rate times absolute expected expense. No gate if undefined.
+    Disclosure gate: abs(actual - expected) > amount OR
+    abs(actual - prior actual) >= rate * abs(prior actual).
+    Evaluate each available comparison independently, without dividing by zero.
     The ratios are implied average costs, NOT contractual weighted coupon rates.
     """
     nums = [decimal(x) for x in (prior_begin_debt, prior_end_debt,
@@ -88,24 +92,28 @@ def overall_test(prior_begin_debt, prior_end_debt, current_end_debt,
         notes.append('자본화 후 기대이자비용이 음수로 계산되어 대사를 보류합니다.')
     variance = ai - expected if ai is not None and expected is not None else None
     ratio = abs(variance) / abs(expected) if variance is not None and expected not in (None, 0) else None
-    tolerance = max(min_amt, abs(expected) * min_pct) if expected is not None else None
-    trigger = bool(variance is not None and ratio is not None and
-                   abs(variance) >= min_amt and ratio >= min_pct)
+    tolerance = min_amt
+    yoy_change = ai - pi if ai is not None and pi is not None else None
+    yoy_ratio = abs(yoy_change) / abs(pi) if yoy_change is not None and pi != 0 else None
+    yoy_threshold = abs(pi) * min_pct if pi is not None else None
+    trigger = bool((variance is not None and abs(variance) > min_amt) or
+                   (yoy_change is not None and abs(yoy_change) >= yoy_threshold))
     if expected == 0:
         notes.append('기대이자비용이 0이므로 상대차이율을 정의할 수 없습니다: 별도 검토가 필요합니다.')
-    if variance is None:
+    if pi == 0:
+        notes.append('전기 실제 이자비용이 0이므로 전기대비 변동률은 정의되지 않지만, 변동금액 기준은 0원으로 비교합니다.')
+    if trigger:
+        conclusion = '금액 차이 또는 전기대비 변동 기준 충족: 관련 차입·사채 공시 검색 필요.'
+    elif variance is None or yoy_change is None:
         conclusion = '계산 불가: 누락 자료를 확인한 뒤 테스트를 재수행하세요.'
-    elif ratio is None:
-        conclusion = '비율 산정 불가: 수동 검토 필요, 자동 공시검색은 하지 않습니다.'
-    elif trigger:
-        conclusion = '두 검토기준을 모두 충족: 관련 차입·사채 공시 검색 필요.'
     else:
         conclusion = '설정한 공시추적 기준 미충족: 공시검색 생략. 감사 결론을 뜻하지 않습니다.'
     method = ('전기 자본화 전 이자비용 / 전기 평균 차입금 × 당기 평균 차입금 − 당기 자본화액'
               if both_cap else '전기 비용화 이자비용 / 전기 평균 차입금 × 당기 평균 차입금')
     notes.append('기초·기말 단순평균에 따른 추정이므로 차입·상환 시점, 환율, 변동금리 및 연결범위를 별도로 검토해야 합니다.')
     return Result(pb, pe, ce, pi, ai, pc, cc, prev_avg, cur_avg, rate,
-                  expected, variance, ratio, tolerance, trigger, conclusion,
+                  expected, variance, ratio, tolerance, yoy_change, yoy_ratio,
+                  yoy_threshold, trigger, conclusion,
                   method, tuple(notes))
 
 
@@ -120,7 +128,7 @@ def relevant_title(title):
 def interpret_disclosure_coverage(result, events):
     """Avoid guessing a causal explanation from a filing title alone."""
     if not result.needs_disclosure_search:
-        return '검색 비대상: 기대값과 실제값의 차이가 두 기준을 동시에 충족하지 않았습니다.'
+        return '검색 비대상: 확인 가능한 금액 차이 및 전기대비 변동 기준 중 충족한 조건이 없습니다. 누락 자료가 있으면 별도 검토가 필요합니다.'
     if not events:
         return '관련 제목 공시 미확인: 원인 설명 불가. 차입금명세 및 계약서 요청.'
     return (f'관련 공시 {len(events)}건 발견. 공시 제목만으로 금액·금리·기간 및 상환효과를 '
