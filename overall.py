@@ -223,7 +223,7 @@ def overall(year, rows_prior, rows_current, notes_current, notes_prior,
     post_rate,post_total,post_count=weighted(bonds,"current")
     bond_checks=bond_expectations(bonds,year)
     partial=sum((x for _,x,_ in bond_checks if x is not None),D(0))
-    missing=len([x for _,x,_ in bond_checks if x[0].rate is None or x[1] is None])
+    missing=sum(1 for bond,amount,_ in bond_checks if bond.rate is None or amount is None)
     if not bonds: issues.append("사채별 잔액·금리표 추출 실패: 계약별 기대이자 미계산")
     if missing: issues.append(f"회사채 {missing}건은 계약금리 또는 발행일 확인 불가")
     return {"year":year,"actual":actual_current,"previous":actual_prior,
