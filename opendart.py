@@ -1,4 +1,4 @@
-"""Small OpenDART reader: historical accounts first, event disclosures ONLY on trigger."""
+"""Small OpenDART reader: historical accounts first, independent borrowing disclosure context."""
 from __future__ import annotations
 import io
 import json
@@ -107,7 +107,7 @@ class Dart:
             return '\n'.join(as_text(arc.read(n)) for n in names)
 
     def event_filings(self, corp_code, year, limit=10):
-        """This method must only be called AFTER overall_test.needs_disclosure_search."""
+        """Collect independent company context after the calculation, regardless of its threshold."""
         results=[]; page=1
         while True:
             obj=self._json('list.json',corp_code=corp_code,bgn_de=f'{year}0101',

@@ -38,10 +38,16 @@ class Result:
     yoy_change: Optional[Decimal]
     yoy_change_ratio: Optional[Decimal]
     yoy_difference_threshold: Optional[Decimal]
-    needs_disclosure_search: bool
+    needs_additional_review: bool
     conclusion: str
     method: str
     warnings: tuple[str, ...]
+
+
+    @property
+    def needs_disclosure_search(self):
+        """Legacy alias; independent disclosure collection no longer uses this flag."""
+        return self.needs_additional_review
 
 
 def overall_test(prior_begin_debt, prior_end_debt, current_end_debt,
@@ -50,7 +56,7 @@ def overall_test(prior_begin_debt, prior_end_debt, current_end_debt,
                  min_variance_ratio=D('0.10')) -> Result:
     """Use prior observed interest burden to independently estimate current expense.
 
-    Disclosure gate: abs(actual - expected) > amount OR
+    Additional-review flag: abs(actual - expected) > amount OR
     abs(actual - prior actual) >= rate * abs(prior actual).
     Evaluate each available comparison independently, without dividing by zero.
     The ratios are implied average costs, NOT contractual weighted coupon rates.
@@ -103,11 +109,11 @@ def overall_test(prior_begin_debt, prior_end_debt, current_end_debt,
     if pi == 0:
         notes.append('전기 실제 이자비용이 0이므로 전기대비 변동률은 정의되지 않지만, 변동금액 기준은 0원으로 비교합니다.')
     if trigger:
-        conclusion = '금액 차이 또는 전기대비 변동 기준 충족: 관련 차입·사채 공시 검색 필요.'
+        conclusion = '금액 차이 또는 전기대비 변동 기준 충족: 추가 감사절차 검토 대상.'
     elif variance is None or yoy_change is None:
         conclusion = '계산 불가: 누락 자료를 확인한 뒤 테스트를 재수행하세요.'
     else:
-        conclusion = '설정한 공시추적 기준 미충족: 공시검색 생략. 감사 결론을 뜻하지 않습니다.'
+        conclusion = '설정한 추가검토 기준 미충족. 공시는 별도 수집하며 감사 결론을 뜻하지 않습니다.'
     method = ('전기 자본화 전 이자비용 / 전기 평균 차입금 × 당기 평균 차입금 − 당기 자본화액'
               if both_cap else '전기 비용화 이자비용 / 전기 평균 차입금 × 당기 평균 차입금')
     notes.append('기초·기말 단순평균에 따른 추정이므로 차입·상환 시점, 환율, 변동금리 및 연결범위를 별도로 검토해야 합니다.')
@@ -118,7 +124,7 @@ def overall_test(prior_begin_debt, prior_end_debt, current_end_debt,
 
 
 SUBJECT_WORDS = ('차입', '사채', '차환', '상환', '회사채', '증권발행실적',
-                 '증권신고서', '기업어음', '금전대차', '채무증권')
+                 '증권신고서', '기업어음', '금전대차', '채무증권', '채무보증', '채무인수', '기한이익', '담보제공')
 
 
 def relevant_title(title):
@@ -126,10 +132,7 @@ def relevant_title(title):
 
 
 def interpret_disclosure_coverage(result, events):
-    """Avoid guessing a causal explanation from a filing title alone."""
-    if not result.needs_disclosure_search:
-        return '검색 비대상: 확인 가능한 금액 차이 및 전기대비 변동 기준 중 충족한 조건이 없습니다. 누락 자료가 있으면 별도 검토가 필요합니다.'
+    """Disclosures are independent reference information, never a variance verdict."""
     if not events:
-        return '관련 제목 공시 미확인: 원인 설명 불가. 차입금명세 및 계약서 요청.'
-    return (f'관련 공시 {len(events)}건 발견. 공시 제목만으로 금액·금리·기간 및 상환효과를 '
-            '검증할 수 없어 차이의 원인은 미확인입니다. 원문 근거와 차입금명세를 대사해야 합니다.')
+        return '검색 범위 내 관련 제목 공시 미확인. 차입 이슈가 없다는 의미는 아닙니다.'
+    return f'차입 관련 공시 {len(events)}건. 별도 참고정보이며 차이의 원인은 미확인입니다.'

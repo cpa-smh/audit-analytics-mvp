@@ -1,0 +1,46 @@
+[
+  {
+    "id": "520-5",
+    "title": "분석적절차",
+    "paragraph": "5",
+    "kind": "요구사항",
+    "summary": "실증적인 분석적절차의 적합성, 기초자료의 신뢰성, 기대치의 정확성을 평가하고 추가 조사 없이 수용할 차이금액을 결정한다.",
+    "source": "MyKIFRS get_paragraph: 520-5",
+    "source_url": "https://www.kicpa.or.kr/board/list.brd?boardId=acc0102",
+    "source_label": "한국공인회계사회 감사기준서 게시목록 (문단 직접링크 아님)",
+    "verified_on": "2026-11-06"
+  },
+  {
+    "id": "520-7",
+    "title": "분석적절차",
+    "paragraph": "7",
+    "kind": "요구사항",
+    "summary": "관련정보와 불일치하거나 기대치와 유의적으로 다른 변동은 경영진에게 질문하고 답변을 뒷받침하는 적합한 감사증거를 입수하며 필요한 기타 감사절차를 수행한다.",
+    "source": "MyKIFRS get_paragraph: 520-7",
+    "source_url": "https://www.kicpa.or.kr/board/list.brd?boardId=acc0102",
+    "source_label": "한국공인회계사회 감사기준서 게시목록 (문단 직접링크 아님)",
+    "verified_on": "2026-11-06"
+  },
+  {
+    "id": "500-A35",
+    "title": "감사증거",
+    "paragraph": "A35",
+    "kind": "적용지침",
+    "summary": "감사증거의 신뢰성은 원천·성격·입수상황과 관련 통제의 영향을 받는다. 독립된 외부 원천 및 감사인의 직접 입수는 일반적으로 신뢰성을 높이지만 예외가 있을 수 있다.",
+    "source": "MyKIFRS get_paragraph: 500-A35",
+    "source_url": "https://www.kicpa.or.kr/board/list.brd?boardId=acc0102",
+    "source_label": "한국공인회계사회 감사기준서 게시목록 (문단 직접링크 아님)",
+    "verified_on": "2026-11-06"
+  },
+  {
+    "id": "330-A5",
+    "title": "평가된 위험에 대한 감사인의 대응",
+    "paragraph": "A5",
+    "kind": "적용지침",
+    "summary": "감사절차의 성격은 목적과 유형(검사·관찰·질문·조회·재계산·재수행·분석적절차)을 의미하며 평가된 위험에 대응할 때 중요하다.",
+    "source": "MyKIFRS get_paragraph: 330-A5",
+    "source_url": "https://www.kicpa.or.kr/board/list.brd?boardId=acc0102",
+    "source_label": "한국공인회계사회 감사기준서 게시목록 (문단 직접링크 아님)",
+    "verified_on": "2026-11-06"
+  }
+]

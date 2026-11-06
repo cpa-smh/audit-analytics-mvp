@@ -127,14 +127,14 @@ class StubDart:
         self.event_excerpt_calls+=1
         return '발행금액 3,500억원, 표면금리 3.49% (원문 대사 필요)'
 
-class GatingCases(unittest.TestCase):
-    def test_no_event_queries_before_variance_gate(self):
+class DisclosureCases(unittest.TestCase):
+    def test_disclosures_collected_even_below_review_threshold(self):
         d=StubDart(10_500_000_000)
         result,meta,events,explanation=analyze_company(d,'가상상장사',2025,'CFS',D('1000000000'),D('0.10'))
         self.assertFalse(result.needs_disclosure_search)
-        self.assertEqual(d.event_calls,0)
-        self.assertEqual(d.event_excerpt_calls,0)
-        self.assertEqual(events,[])
+        self.assertEqual(d.event_calls,1)
+        self.assertEqual(d.event_excerpt_calls,1)
+        self.assertEqual(len(events),1)
     def test_each_or_arm_reaches_event_search(self):
         from unittest.mock import patch
         for prior,actual in ((100_000_000_000,102_000_000_000),
@@ -151,7 +151,7 @@ class GatingCases(unittest.TestCase):
                 self.assertEqual(d.event_excerpt_calls,1)
                 self.assertEqual(len(events),1)
 
-    def test_event_search_happens_only_after_gate(self):
+    def test_three_sheet_export(self):
         d=StubDart(12_000_000_000)
         result,meta,events,explanation=analyze_company(d,'가상상장사',2025,'CFS',D('1000000000'),D('0.10'))
         self.assertTrue(result.needs_disclosure_search)
@@ -162,11 +162,11 @@ class GatingCases(unittest.TestCase):
         with TemporaryDirectory() as tmp:
             path=write_excel(Path(tmp)/'output.xlsx',result,meta,events,explanation)
             wb=load_workbook(path,read_only=True)
-            self.assertEqual(wb.sheetnames,['Overall Test','관련 공시 검토'])
-            self.assertEqual(wb['관련 공시 검토']['A4'].value,'증권발행실적보고서')
-            rows=dict(wb['Overall Test'].iter_rows(min_row=2,values_only=True))
+            self.assertEqual(wb.sheetnames,['이자비용 차이 분석','추가 감사절차','차입 관련 공시'])
+            self.assertEqual(wb['차입 관련 공시']['A5'].value,'증권발행실적보고서')
+            rows=dict(wb['이자비용 차이 분석'].iter_rows(min_row=2,values_only=True))
             self.assertEqual(rows['전기대비 절대변동률'],0.2)
-            self.assertEqual(rows['금액 차이 OR 전기대비 변동 기준 충족'],'예')
+            self.assertEqual(rows['추가검토 기준 충족 (OR)'],'예')
             wb.close()
 
 if __name__=='__main__':unittest.main()
