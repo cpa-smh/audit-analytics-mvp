@@ -8,6 +8,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font,PatternFill,Alignment
 from dart import Dart,DartError,expense,excerpts,number
 from ai import ask,citation,input_value,calculate
+from overall import overall,formatted_rows
 
 ACCOUNTS=('이자비용','감가상각비')
 PROCEDURES={'이자비용':'차입금 명세·은행조회서·계약서 대사, 일별 잔액×약정금리 재계산, 미지급이자 기간귀속 및 자본화 검토',
@@ -20,7 +21,7 @@ def change(current,previous,pct,amount):
 
 def collect(args):
     client=Dart(os.getenv('OPENDART_API_KEY',''),args.cache);company=client.company(args.company)
-    values={a:{} for a in ACCOUNTS};sources=[];warnings=[];receipts={};rows_by_year={}
+    values={a:{} for a in ACCOUNTS};sources=[];warnings=[];receipts={};rows_by_year={};note_texts={}
     def source(account,title,receipt,day,quote,year,basis):
         item={'id':f'S{len(sources)+1}','account':account,'title':title,'receipt':receipt,'date':day,'url':'https://dart.fss.or.kr/dsaf001/main.do?rcpNo='+receipt,'quote':quote,'year':year,'basis':basis};sources.append(item);return item['id']
     for y in (args.year-1,args.year):
@@ -45,10 +46,11 @@ def collect(args):
         if not receipt: warnings.append(f'{y} 사업보고서 미확인');continue
         try:text=client.document(receipt,args.basis)
         except (DartError,ValueError):warnings.append(f'{y} 해당 범위 주석 원문 없음/조회 실패');continue
+        note_texts[y]=text
         for a in ACCOUNTS:
             for quote in excerpts(text,a,args.max_excerpts):source(a,f'사업보고서 ({y}.12) {args.basis} 감사보고서',receipt,receipt[:8],quote,y,args.basis)
     triggered=[a for a in ACCOUNTS if any(values[a][y]['amount'] is None for y in (args.year-1,args.year)) or change(values[a][args.year]['amount'],values[a][args.year-1]['amount'],args.pct,args.amount)[2]]
-    tokens={'이자비용':r'차입|사채|금전대차|증권신고서|상환','감가상각비':r'신규시설|시설투자|유형자산|공장|생산중단|생산재개'}
+    tokens={'이자비용':r'차입|사채|금전대차|증권신고서|증권발행실적보고서|상환|차환','감가상각비':r'신규시설|시설투자|유형자산|공장|생산중단|생산재개'}
     related=[f for f in filings if f['rcept_dt'][:4]==str(args.year) and any(re.search(tokens[a],f['report_nm']) for a in triggered)]
     related.sort(key=lambda f:f['rcept_no'],reverse=True)
     if len(related)>args.max_filings:warnings.append(f'관련공시 {len(related)}건 중 최근 {args.max_filings}건만 탐색')
@@ -57,7 +59,7 @@ def collect(args):
         except (DartError,ValueError):warnings.append(f"공시 원문 조회 실패 {f['rcept_no']}");continue
         for a in triggered:
             for quote in excerpts(text,a,2):source(a,f['report_nm'],f['rcept_no'],f['rcept_dt'],quote,args.year,'event')
-    return company['corp_name'],values,sources,warnings
+    return company['corp_name'],values,sources,warnings,rows_by_year,note_texts,receipts
 
 def analyze(args,values,sources,answer,ai_status):
     index={s['id']:s for s in sources};reports=[]
@@ -114,9 +116,20 @@ def safe(v):
     if v is None:return '자료 없음'
     if isinstance(v,str):return "'"+v if v.startswith(('=','+','-','@')) else v[:32000]
     return v
-def export(path,company,year,reports,sources,warnings):
+def export(path,company,year,reports,sources,warnings,overall_report=None):
     w=Workbook();w.remove(w.active)
     sheets=[('분석적절차 결과',['분석 계정','당기 금액(원)','전기 금액(원)','증감액(원)','증감률','공시 확인 사실','변동 원인 후보(AI)','예상 비용(원)','실제-예상(원)','기대값 적용 범위','금리 비교','잠재적 왜곡표시위험 후보','추가 감사절차','추가 확인사항','분석 상태','금액 출처 ID','범위·단위·연도'],reports),('관련 공시 근거',['관련 계정','공시명','공시일','접수번호','DART URL','인용문','출처 ID','범위','보고연도'],[[s[k] for k in ['account','title','date','receipt','url','quote','id','basis','year']] for s in sources])]
+    if overall_report is not None:
+        sheets.append(('이자비용 Overall Test',['항목','공시 기반 분석값'],formatted_rows(overall_report)))
+        bond_rows=[]
+        for bond,amount,method in overall_report['bond_checks']:
+            bond_rows.append([bond.name,bond.currency,bond.previous,bond.current,
+                bond.rate,bond.issued.isoformat() if bond.issued else '확인되지 않음',
+                bond.maturity.isoformat() if bond.maturity else '확인되지 않음',
+                amount,method,bond.receipt,
+                'https://dart.fss.or.kr/dsaf001/main.do?rcpNo='+bond.receipt if bond.receipt else ''])
+        sheets.append(('사채별 금리·기대이자',['사채명','통화','전기말 원금대용(원)','당기말 원금대용(원)','표면금리(%)',
+            '발행일','만기일','당기 쿠폰이자 근사(원)','계산 가정·한계','사업보고서 접수번호','공시 URL'],bond_rows))
     for name,headers,rows in sheets:
         s=w.create_sheet(name);s.append([safe(f'{company} {year} | 위험평가 보조도구 · 오류/위험 확정 아님')]);s.append([safe('; '.join(warnings) or '수집 경고 없음')]);s.append(headers)
         for row in rows:s.append([safe(v) for v in row])
@@ -130,7 +143,7 @@ def export(path,company,year,reports,sources,warnings):
             for n in range(4,6):
                 for col in (2,3,4,8,9):s.cell(n,col).number_format='#,##0;(#,##0)'
                 s.cell(n,5).number_format='0.0%'
-        else:s.column_dimensions['F'].width=100
+        elif name=='관련 공시 근거':s.column_dimensions['F'].width=100
     path=Path(path);path.parent.mkdir(parents=True,exist_ok=True);w.save(path)
 
 def demo(year,basis):
@@ -142,13 +155,20 @@ def demo(year,basis):
 def main():
     load_dotenv(Path(__file__).with_name('.env'))
     p=argparse.ArgumentParser(description='이자·감가상각비 감사 분석적절차 MVP')
-    p.add_argument('--company',required=True);p.add_argument('--year',type=int,required=True);p.add_argument('--output',default='분석결과.xlsx');p.add_argument('--basis',choices=['CFS','OFS'],default='CFS');p.add_argument('--pct',type=Decimal,default=Decimal('.20'));p.add_argument('--amount',type=Decimal,default=Decimal('1000000000'));p.add_argument('--rate-pp',type=Decimal,default=Decimal('1'));p.add_argument('--cache',default='.cache');p.add_argument('--max-filings',type=int,default=8);p.add_argument('--max-excerpts',type=int,default=4);p.add_argument('--no-ai',action='store_true');p.add_argument('--demo',action='store_true');args=p.parse_args()
-    if not 2016<=args.year<date.today().year or any(not x.is_finite() or x<0 for x in (args.pct,args.amount,args.rate_pp)) or args.max_filings<1 or args.max_excerpts<1:p.error('완료된 사업연도(2016년 이후), 유한한 비음수 기준 및 양수 탐색 건수를 지정하세요.')
-    try:company,values,sources,warnings=demo(args.year,args.basis) if args.demo else collect(args)
+    p.add_argument('--company',required=True);p.add_argument('--year',type=int,required=True);p.add_argument('--output',default='분석결과.xlsx');p.add_argument('--basis',choices=['CFS','OFS'],default='CFS');p.add_argument('--pct',type=Decimal,default=Decimal('.20'));p.add_argument('--amount',type=Decimal,default=Decimal('1000000000'));p.add_argument('--rate-pp',type=Decimal,default=Decimal('1'));p.add_argument('--overall-tolerance',type=Decimal,default=Decimal('0.05'));p.add_argument('--cache',default='.cache');p.add_argument('--max-filings',type=int,default=8);p.add_argument('--max-excerpts',type=int,default=4);p.add_argument('--no-ai',action='store_true');p.add_argument('--demo',action='store_true');args=p.parse_args()
+    if not 2016<=args.year<date.today().year or any(not x.is_finite() or x<0 for x in (args.pct,args.amount,args.rate_pp,args.overall_tolerance)) or args.max_filings<1 or args.max_excerpts<1:p.error('완료된 사업연도(2016년 이후), 유한한 비음수 기준 및 양수 탐색 건수를 지정하세요.')
+    try:company,values,sources,warnings,rows_by_year,note_texts,receipts=(demo(args.year,args.basis)+({},{},{}) if args.demo else collect(args))
     except (DartError,ValueError):
-        company=args.company;values={a:{y:{'amount':None,'source':'','method':''} for y in (args.year-1,args.year)} for a in ACCOUNTS};sources=[];warnings=['기업 식별/수집 실패: 회사명·DART 키·네트워크 확인. 수치 미입력.']
+        company=args.company;values={a:{y:{'amount':None,'source':'','method':''} for y in (args.year-1,args.year)} for a in ACCOUNTS};sources=[];warnings=['기업 식별/수집 실패: 회사명·DART 키·네트워크 확인. 수치 미입력.'];rows_by_year={};note_texts={};receipts={}
     answer,status=(None,'AI 미사용') if args.no_ai or args.demo or not sources else ask({'company':company,'year':args.year,'basis':args.basis,'amounts':values,'sources':sources},args.cache)
-    reports=analyze(args,values,sources,answer,status);export(args.output,company,args.year,reports,sources,warnings)
+    reports=analyze(args,values,sources,answer,status)
+    interest_test=overall(args.year,rows_by_year.get(args.year-1,[]),rows_by_year.get(args.year,[]),
+        note_texts.get(args.year,''),note_texts.get(args.year-1,''),
+        actual_current=values['이자비용'][args.year]['amount'],
+        actual_prior=values['이자비용'][args.year-1]['amount'],
+        tolerance_abs=args.amount,tolerance_pct=args.overall_tolerance,
+        receipt=receipts.get(args.year,'')) if not args.demo else None
+    export(args.output,company,args.year,reports,sources,warnings,interest_test)
     print(f'저장: {Path(args.output).resolve()} / {status}')
     for warning in warnings:print(warning)
 if __name__=='__main__':main()
